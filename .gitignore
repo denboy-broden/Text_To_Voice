@@ -30,3 +30,6 @@ pnpm-debug.log*
 # Test
 coverage/
 .nyc_output/
+
+# Reference sources (not production code)
+sources/

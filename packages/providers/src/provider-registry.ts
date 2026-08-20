@@ -104,6 +104,7 @@ export class ProviderRegistry {
     const ttsProviders = this.getTTSProviders();
     if (ttsProviders.includes("openai")) return "openai";
     if (ttsProviders.includes("gemini")) return "gemini";
+    if (ttsProviders.includes("openrouter")) return "openrouter";
     if (ttsProviders.length > 0) return ttsProviders[0];
     return undefined;
   }
@@ -117,6 +118,7 @@ export class ProviderRegistry {
     const llmProviders = this.getLLMProviders();
     if (llmProviders.includes("openai")) return "openai";
     if (llmProviders.includes("gemini")) return "gemini";
+    if (llmProviders.includes("openrouter")) return "openrouter";
     if (llmProviders.length > 0) return llmProviders[0];
     return undefined;
   }

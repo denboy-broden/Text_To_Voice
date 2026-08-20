@@ -10,8 +10,7 @@ export type ProviderName =
   | "gemini"
   | "openrouter"
   | "openai-compatible"
-  | "9router"
-  | "omnirouter";
+  | (string & {});
 
 export interface ProviderConfig {
   name: ProviderName;
