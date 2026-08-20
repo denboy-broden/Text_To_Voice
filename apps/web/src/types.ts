@@ -51,7 +51,7 @@ export interface ChatMessage {
 export interface ChatSession {
   id: string;
   persona_id: string;
-  title: string;
+  title?: string;
   messages: ChatMessage[];
   created_at: string;
   updated_at: string;

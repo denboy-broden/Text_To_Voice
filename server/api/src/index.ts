@@ -8,15 +8,15 @@ import { logger } from "hono/logger";
 import { serve } from "@hono/node-server";
 import { pluginRegistry, AudioCachePlugin } from "@nusantara/core";
 import { ProviderRegistry } from "@nusantara/providers";
-import { ttsRoutes } from "./routes/tts";
-import { agentRoutes } from "./routes/agent";
-import { modelsRoutes } from "./routes/models";
-import { pluginRoutes, batchRoutes } from "./routes/plugins";
+import { createTTSRoutes } from "./routes/tts";
+import { createAgentRoutes } from "./routes/agent";
+import { createModelsRoutes } from "./routes/models";
+import { createPluginRoutes, createBatchRoutes } from "./routes/plugins";
 import { createProviderConfigRoutes, registerProvidersFromConfig } from "./routes/provider-config";
 import { rateLimiter } from "./middleware/rate-limiter";
 import { errorHandler } from "./middleware/error-handler";
 
-// ── Provider Registry ────────────────────────────────────────
+// ── Provider Registry (single shared instance) ──────────────
 const registry = new ProviderRegistry();
 export { registry as providerRegistry };
 
@@ -69,11 +69,12 @@ app.use(
   rateLimiter({ windowMs: 60_000, max: 30, keyPrefix: "agent" }),
 );
 
-app.route("/api/tts", ttsRoutes);
-app.route("/api/agent", agentRoutes);
-app.route("/api/models", modelsRoutes);
-app.route("/api/plugins", pluginRoutes);
-app.route("/api/batch", batchRoutes);
+// ── Routes (all receive shared registry) ─────────────────────
+app.route("/api/tts", createTTSRoutes(registry));
+app.route("/api/agent", createAgentRoutes(registry));
+app.route("/api/models", createModelsRoutes(registry));
+app.route("/api/plugins", createPluginRoutes(registry));
+app.route("/api/batch", createBatchRoutes(registry));
 app.route("/api/providers", createProviderConfigRoutes(registry));
 
 app.get("/api/health", (c) => {

@@ -127,9 +127,10 @@ function togglePlayPause() {
 }
 
 function downloadEntry(entry: LibraryEntry) {
+  const ext = entry.audioUrl.includes(".wav") ? "wav" : entry.audioUrl.includes(".mp3") ? "mp3" : "wav";
   const a = document.createElement("a");
   a.href = entry.audioUrl;
-  a.download = `${entry.title.replace(/[^a-zA-Z0-9]/g, "_")}.mp3`;
+  a.download = `${entry.title.replace(/[^a-zA-Z0-9]/g, "_")}.${ext}`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

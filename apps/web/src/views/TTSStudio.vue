@@ -2,7 +2,6 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
 import { useAPI } from "../composables/useAPI";
 import { useAudioPlayer } from "../composables/useAudioPlayer";
-import type { TTSResponse as APIResponse } from "../types";
 import {
   DIALECT_PRESETS,
   VOICES,
@@ -63,9 +62,11 @@ const maxChars = 5000;
 
 const ttsModels = computed(() => getTTSModels());
 
-const filteredModels = computed(() =>
-  ttsModels.value.filter((m) => m.provider === provider.value)
-);
+const filteredModels = computed(() => {
+  const exact = ttsModels.value.filter((m) => m.provider === provider.value);
+  if (exact.length > 0) return exact;
+  return ttsModels.value;
+});
 
 const voicesForModel = computed(() => {
   const voiceNames = getVoicesForModel(selectedModelId.value);
@@ -127,8 +128,7 @@ async function loadProviders() {
       provider.value = res.tts[0];
     }
   } catch {
-    availableProviders.value = { tts: ["gemini", "openai"], llm: ["gemini", "openai"] };
-    provider.value = "gemini";
+    availableProviders.value = { tts: [], llm: [] };
   }
 }
 
@@ -170,13 +170,18 @@ async function generateTTS() {
   const startTime = Date.now();
 
   try {
+    const BASE_URL = "/api";
+    let fetchUrl: string;
+    let payload: unknown;
+
     if (isMultiSpeakerMode.value) {
       const dialogue = speakers.value
         .filter((s) => s.text.trim())
         .map((s) => `${s.speaker}: ${s.text}`)
         .join("\n\n");
 
-      const payload = {
+      fetchUrl = `${BASE_URL}/tts/generate-multi`;
+      payload = {
         dialogue,
         provider: provider.value,
         model: selectedModelId.value,
@@ -188,12 +193,9 @@ async function generateTTS() {
           })),
         format: outputFormat.value,
       };
-
-      const res = await post<APIResponse>("/tts/multi-speaker", payload);
-      generationDuration.value = Date.now() - startTime;
-      await loadAudioFromResponse(res);
     } else {
-      const payload = {
+      fetchUrl = `${BASE_URL}/tts/generate`;
+      payload = {
         text: inputText.value,
         provider: provider.value,
         model: selectedModelId.value,
@@ -202,25 +204,37 @@ async function generateTTS() {
         instructions: instructions.value || undefined,
         format: outputFormat.value,
       };
-
-      const res = await post<APIResponse>("/tts/generate", payload);
-      generationDuration.value = Date.now() - startTime;
-      await loadAudioFromResponse(res);
     }
-  } catch {
+
+    const res = await fetch(fetchUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(errBody.error || `HTTP ${res.status}`);
+    }
+
+    const blob = await res.blob();
     generationDuration.value = Date.now() - startTime;
+
+    generatedAudioBlob.value = blob;
+    const url = URL.createObjectURL(blob);
+    generatedAudioUrl.value = url;
+    load(url);
+    await nextTick();
+    startWaveformLoop();
+  } catch (err) {
+    generationDuration.value = Date.now() - startTime;
+    if (err instanceof Error) {
+      error.value = { detail: err.message, code: "GENERATE_ERROR" };
+    }
   }
 }
 
-async function loadAudioFromResponse(res: APIResponse) {
-  let blob: Blob;
-  if (res.audio_url) {
-    const resp = await fetch(res.audio_url);
-    blob = await resp.blob();
-  } else {
-    blob = new Blob([], { type: "audio/wav" });
-  }
-
+async function loadAudioFromResponse(blob: Blob) {
   generatedAudioBlob.value = blob;
   const url = URL.createObjectURL(blob);
   generatedAudioUrl.value = url;
@@ -238,6 +252,15 @@ function startWaveformLoop() {
 function drawWaveform() {
   const canvas = waveformCanvas.value;
   if (!canvas) return;
+
+  if (!audioState.value.playing && !audioState.value.paused) {
+    return;
+  }
+
+  if (!audioState.value.playing) {
+    cancelAnimationFrame(waveformRaf);
+    return;
+  }
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -329,18 +352,24 @@ function downloadAudio() {
   document.body.removeChild(a);
 }
 
-// ── Save to library ──
-async function saveToLibrary() {
-  if (!generatedAudioBlob.value) return;
+// ── Save to library (local storage) ──
+function saveToLibrary() {
+  if (!generatedAudioBlob.value || !generatedAudioUrl.value) return;
   try {
-    const form = new FormData();
-    const ext = outputFormat.value;
-    form.append("file", generatedAudioBlob.value, `tts-output.${ext}`);
-    form.append("source_type", "tts");
-    form.append("tags", isMultiSpeakerMode.value ? "multi-speaker" : "single");
-    await post("/library/upload", form);
+    const entry = {
+      id: `lib-${Date.now()}`,
+      title: `TTS - ${inputText.value.slice(0, 40) || "Audio"}`,
+      audioUrl: generatedAudioUrl.value,
+      provider: provider.value,
+      voice: selectedVoice.value,
+      createdAt: new Date().toISOString(),
+      tags: [isMultiSpeakerMode.value ? "multi-speaker" : "single", provider.value],
+    };
+    const existing = JSON.parse(localStorage.getItem("nusantara-audio-library") || "[]");
+    existing.push(entry);
+    localStorage.setItem("nusantara-audio-library", JSON.stringify(existing));
   } catch {
-    // error handled by useAPI
+    // localStorage full or unavailable
   }
 }
 

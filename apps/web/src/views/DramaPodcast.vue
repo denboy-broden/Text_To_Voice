@@ -26,8 +26,7 @@ async function loadProviders() {
       provider.value = res.tts[0];
     }
   } catch {
-    availableProviders.value = { tts: ["gemini", "openai"], llm: ["gemini", "openai"] };
-    provider.value = "gemini";
+    availableProviders.value = { tts: [], llm: [] };
   }
 }
 
@@ -45,8 +44,8 @@ const currentTrack = ref(-1);
 const generationError = ref("");
 
 const availableVoices = [
-  "Kore", "Zaafira", "Aris", "Siti", "Budi",
-  "Rini", "Joko", "Dewi", "Andi", "Maya",
+  "Kore", "Puck", "Zephyr", "Charon", "Aoede",
+  "Fenrir", "Leda", "Sulafat", "Vindemiatrix", "Algieba",
 ];
 
 const canGenerateScript = computed(
@@ -105,12 +104,14 @@ async function generateScript() {
     : `Buat naskah dialog drama pendek tentang: ${title.value || "topik bebas"}. Gunakan ${scenes.value.length} karakter. Format: Nama: Teks dialog`;
 
   try {
-    const res = await post<{ reply?: string; message?: { content: string } }>(
+    const res = await post<{
+      reply?: string;
+      message?: { content: string; role: string; id: string };
+    }>(
       "/agent/chat",
       {
         message: prompt,
-        persona_id: "reporter",
-        mode: "script",
+        persona_id: "pembaca_berita",
       },
     );
 
@@ -168,26 +169,25 @@ async function generateAudio() {
       format: outputFormat.value,
     };
 
-    const res = await post<{
-      audio_url?: string;
-      audio?: ArrayBuffer;
-      clips?: { url: string; index: number; speaker: string }[];
-    }>("/tts/multi-speaker", payload);
+    const res = await fetch("/api/tts/generate-multi", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-    if (res.clips && res.clips.length > 0) {
-      playlist.value = res.clips.map((c) => ({
-        index: c.index,
-        label: `${c.speaker} — Scene ${c.index + 1}`,
-        audioUrl: c.url,
-      }));
-    } else if (res.audio_url) {
-      const url = res.audio_url;
-      playlist.value = filledScenes.map((s, i) => ({
-        index: i,
-        label: `${s.speaker} — Scene ${i + 1}`,
-        audioUrl: url,
-      }));
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(errBody.error || `HTTP ${res.status}`);
     }
+
+    const blob = await res.blob();
+    const audioUrl = URL.createObjectURL(blob);
+
+    playlist.value = filledScenes.map((s, i) => ({
+      index: i,
+      label: `${s.speaker} — Scene ${i + 1}`,
+      audioUrl,
+    }));
 
     if (playlist.value.length > 0) {
       currentTrack.value = 0;

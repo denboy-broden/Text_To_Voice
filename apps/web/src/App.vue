@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 const route = useRoute();
 const router = useRouter();
+
+const serverConnected = ref(false);
 
 const tabs = [
   { path: "/", label: "TTS Studio", icon: "🎙️", name: "tts-studio" },
@@ -16,6 +19,20 @@ function isActive(path: string): boolean {
   if (path === "/") return route.path === "/";
   return route.path.startsWith(path);
 }
+
+async function checkHealth() {
+  try {
+    const res = await fetch("/api/health", { method: "GET" });
+    serverConnected.value = res.ok;
+  } catch {
+    serverConnected.value = false;
+  }
+}
+
+onMounted(() => {
+  checkHealth();
+  setInterval(checkHealth, 15000);
+});
 </script>
 
 <template>
@@ -44,8 +61,8 @@ function isActive(path: string): boolean {
 
       <div class="sidebar-footer">
         <div class="status-indicator">
-          <span class="status-dot"></span>
-          <span class="text-xs text-muted">Server Connected</span>
+          <span class="status-dot" :class="{ disconnected: !serverConnected }"></span>
+          <span class="text-xs text-muted">{{ serverConnected ? 'Server Connected' : 'Server Offline' }}</span>
         </div>
       </div>
     </aside>
@@ -169,6 +186,11 @@ function isActive(path: string): boolean {
   border-radius: 50%;
   background: var(--accent-green);
   box-shadow: 0 0 6px var(--accent-green);
+}
+
+.status-dot.disconnected {
+  background: var(--accent-red);
+  box-shadow: 0 0 6px var(--accent-red);
 }
 
 /* ── Main ── */

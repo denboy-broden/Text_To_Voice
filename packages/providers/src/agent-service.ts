@@ -7,10 +7,6 @@ import type {
 } from "@nusantara/core";
 import type { ProviderRegistry } from "./provider-registry";
 
-// ============================================================
-// Persona Definitions
-// ============================================================
-
 export interface PersonaConfig {
   name: string;
   systemInstruction: string;
@@ -108,8 +104,11 @@ export interface ChatSession {
 }
 
 // ============================================================
-// Agent Service
+// Agent Service (with session cleanup)
 // ============================================================
+
+const MAX_SESSIONS = 100;
+const SESSION_TTL_MS = 3600_000; // 1 hour
 
 export class AgentService {
   private sessions: Map<string, ChatSession> = new Map();
@@ -119,11 +118,33 @@ export class AgentService {
     this.registry = registry;
   }
 
+  private cleanupSessions(): void {
+    if (this.sessions.size <= MAX_SESSIONS) return;
+
+    const now = Date.now();
+    for (const [id, session] of this.sessions) {
+      if (now - session.updatedAt > SESSION_TTL_MS) {
+        this.sessions.delete(id);
+      }
+    }
+
+    if (this.sessions.size > MAX_SESSIONS) {
+      const oldest = Array.from(this.sessions.entries())
+        .sort((a, b) => a[1].createdAt - b[1].createdAt)
+        .slice(0, this.sessions.size - MAX_SESSIONS);
+      for (const [id] of oldest) {
+        this.sessions.delete(id);
+      }
+    }
+  }
+
   getPersona(persona: AgentPersona): PersonaConfig {
     return PERSONAS[persona] ?? PERSONAS.custom;
   }
 
   createSession(persona: AgentPersona = "asisten_sopan"): ChatSession {
+    this.cleanupSessions();
+
     const id = crypto.randomUUID();
     const session: ChatSession = {
       id,
@@ -188,9 +209,14 @@ export class AgentService {
       ? `Riwayat percakapan:\n${historyText}\n\nUser: ${userMessage}`
       : userMessage;
 
+    const llmProvider = this.registry.autoSelectLLMProvider();
+    if (!llmProvider) {
+      throw new Error("No LLM provider available. Configure a provider in Settings.");
+    }
+
     const llmResponse = await this.registry.generateLLM({
       message: fullPrompt,
-      provider: this.registry.autoSelectLLMProvider() ?? "gemini",
+      provider: llmProvider,
       model: persona.defaultLLMModel,
       systemInstruction: persona.systemInstruction,
     });
@@ -208,16 +234,20 @@ export class AgentService {
   async speak(
     text: string,
     voice?: string,
-    provider?: "gemini" | "openai",
+    provider?: string,
   ): Promise<TTSResponse> {
-    const ttsProvider = provider ?? this.registry.autoSelectTTSProvider() ?? "gemini";
+    const ttsProvider = (provider as any) ?? this.registry.autoSelectTTSProvider();
+    if (!ttsProvider) {
+      throw new Error("No TTS provider available");
+    }
 
     const modelDefaults: Record<string, { model: string; voice: string }> = {
       gemini: { model: "gemini-2.5-flash-preview-tts", voice: "Kore" },
       openai: { model: "tts-1", voice: "alloy" },
+      openrouter: { model: "openai/tts-1", voice: "alloy" },
     };
 
-    const d = modelDefaults[ttsProvider] ?? modelDefaults.gemini;
+    const d = modelDefaults[ttsProvider] ?? { model: "tts-1", voice: "alloy" };
 
     return this.registry.generateTTS({
       text,

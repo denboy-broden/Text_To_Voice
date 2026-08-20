@@ -92,7 +92,10 @@ export class OpenAICompatibleProvider extends BaseProvider {
     };
   }
 
-  private mapSpeedToNumber(speedModifier: string): number {
+  private mapSpeedToNumber(speedModifier: number | string): number {
+    if (typeof speedModifier === "number") {
+      return Math.max(0.25, Math.min(4.0, speedModifier));
+    }
     if (speedModifier.includes("lambat") || speedModifier.includes("santai")) {
       return 0.75;
     }

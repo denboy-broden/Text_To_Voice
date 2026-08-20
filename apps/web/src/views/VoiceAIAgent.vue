@@ -31,49 +31,19 @@ const canSend = computed(
 
 onMounted(async () => {
   try {
-    const data = await get<AgentPersona[]>("/agent/personas");
-    personas.value = data;
-    if (data.length > 0) {
-      selectedPersonaId.value = data[0].id;
+    const data = await get<{ personas: AgentPersona[] }>("/agent/personas");
+    personas.value = data.personas;
+    if (data.personas.length > 0) {
+      selectedPersonaId.value = data.personas[0].id;
     }
   } catch {
     personas.value = [
       {
-        id: "mas-budi",
-        name: "Mas Budi",
-        description: "PemudaJakarta yang friendly",
-        voice_id: "kore",
-        system_prompt: "Kamu adalah Mas Budi, pemudaJakarta yang ramah.",
-        language: "id",
-        dialect: "jakarta",
-        personality: "friendly",
-      },
-      {
-        id: "ceu-edah",
-        name: "Ceu Edah",
-        description: "Ibu Sunda yang hangat",
-        voice_id: "zaafira",
-        system_prompt: "Kamu adalah Ceu Edah, ibu Sunda yang hangat.",
-        language: "su",
-        dialect: "sunda",
-        personality: "warm",
-      },
-      {
-        id: "reporter",
-        name: "Reporter",
-        description: "Pembawa berita profesional",
-        voice_id: "kore",
-        system_prompt: "Kamu adalah reporter berita yang profesional.",
-        language: "id",
-        dialect: "baku",
-        personality: "professional",
-      },
-      {
-        id: "virtual-assistant",
-        name: "VA",
-        description: "Asisten virtual multibahasa",
-        voice_id: "kore",
-        system_prompt: "Kamu adalah asisten virtual yang multibahasa.",
+        id: "asisten_sopan",
+        name: "Virtual Assistant",
+        description: "Asisten virtual yang ramah dan sopan",
+        voice_id: "Kore",
+        system_prompt: "Anda adalah Virtual Assistant.",
         language: "id",
         dialect: "baku",
         personality: "helpful",
@@ -88,18 +58,41 @@ onMounted(async () => {
 watch(selectedPersonaId, async (id) => {
   if (!id) return;
   try {
-    const data = await post<ChatSession>("/agent/session", {
+    const data = await post<{
+      id: string;
+      sessionId: string;
+      persona_id: string;
+      greeting: string;
+      voice: string;
+      messages: any[];
+    }>("/agent/session", {
       persona_id: id,
     });
-    session.value = data;
-    messages.value = data.messages || [];
+    session.value = {
+      id: data.id ?? data.sessionId,
+      persona_id: data.persona_id,
+      messages: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    messages.value = [];
+
+    if (data.greeting) {
+      const greetingMsg = {
+        id: `msg-greeting-${Date.now()}`,
+        role: "assistant" as const,
+        content: data.greeting,
+        created_at: new Date().toISOString(),
+      };
+      messages.value.push(greetingMsg);
+    }
+
     await nextTick();
     scrollToBottom();
   } catch {
     session.value = {
       id: `session-${Date.now()}`,
       persona_id: id,
-      title: "Sesi Baru",
       messages: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -144,10 +137,16 @@ async function sendMessage() {
   isTyping.value = true;
 
   try {
-    const res = await post<{ message: ChatMessage; audio_url?: string }>(
+    const res = await post<{
+      sessionId: string;
+      message: { id: string; role: string; content: string; created_at: string };
+      reply: string;
+      persona: string;
+      voice: string;
+    }>(
       "/agent/chat",
       {
-        session_id: session.value.id,
+        sessionId: session.value.id,
         message: text,
         persona_id: selectedPersonaId.value,
       },
@@ -156,8 +155,7 @@ async function sendMessage() {
     const assistantMsg: ChatMessage = {
       id: res.message?.id || `msg-${Date.now()}`,
       role: "assistant",
-      content: res.message?.content || (res as unknown as { reply?: string }).reply || "",
-      audio_url: res.audio_url || res.message?.audio_url,
+      content: res.message?.content || res.reply || "",
       created_at: new Date().toISOString(),
     };
     messages.value.push(assistantMsg);
@@ -188,17 +186,24 @@ async function speakMessage(msg: ChatMessage) {
     if (msg.audio_url) {
       await play(msg.audio_url);
     } else {
-      const res = await post<{ audio_url: string }>(
-        "/agent/speak",
-        {
+      const res = await fetch("/api/agent/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           text: msg.content,
-          persona_id: selectedPersonaId.value,
-        },
-      );
-      if (res.audio_url) {
-        msg.audio_url = res.audio_url;
-        await play(res.audio_url);
+          provider: undefined,
+          voice: undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Speak failed: ${res.status}`);
       }
+
+      const blob = await res.blob();
+      const audioUrl = URL.createObjectURL(blob);
+      msg.audio_url = audioUrl;
+      await play(audioUrl);
     }
   } catch {
     speakingMessageId.value = null;
@@ -213,12 +218,12 @@ function stopSpeaking() {
 function clearChat() {
   messages.value = [];
   session.value = null;
-  if (selectedPersonaId.value) {
-    watch(
-      () => selectedPersonaId.value,
-      () => {},
-      { immediate: true },
-    );
+  const currentPersona = selectedPersonaId.value;
+  selectedPersonaId.value = "";
+  if (currentPersona) {
+    nextTick(() => {
+      selectedPersonaId.value = currentPersona;
+    });
   }
 }
 
