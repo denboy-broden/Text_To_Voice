@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onUnmounted } from "vue";
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useAPI } from "../composables/useAPI";
 import { useAudioPlayer } from "../composables/useAudioPlayer";
 import type { DramaScene } from "../types";
 
-const { loading, post } = useAPI();
+const { loading, get, post } = useAPI();
 const { state: audioState, load, play, pause, stop } = useAudioPlayer();
 
 interface SceneLine {
@@ -14,8 +14,24 @@ interface SceneLine {
   text: string;
 }
 
-const provider = ref<"gemini" | "openai">("gemini");
+const availableProviders = ref<{ tts: string[]; llm: string[] }>({ tts: [], llm: [] });
+const provider = ref("");
 const outputFormat = ref<"wav" | "mp3">("wav");
+
+async function loadProviders() {
+  try {
+    const res = await get<{ tts: string[]; llm: string[] }>("/providers/active/list");
+    availableProviders.value = res;
+    if (res.tts.length > 0 && !provider.value) {
+      provider.value = res.tts[0];
+    }
+  } catch {
+    availableProviders.value = { tts: ["gemini", "openai"], llm: ["gemini", "openai"] };
+    provider.value = "gemini";
+  }
+}
+
+onMounted(loadProviders);
 const title = ref("");
 const description = ref("");
 const bgMusic = ref("");
@@ -318,15 +334,12 @@ onUnmounted(() => {
           <label class="form-label">Provider</label>
           <div class="btn-group">
             <button
+              v-for="p in availableProviders.tts"
+              :key="p"
               class="btn-toggle"
-              :class="{ active: provider === 'gemini' }"
-              @click="provider = 'gemini'"
-            >Gemini</button>
-            <button
-              class="btn-toggle"
-              :class="{ active: provider === 'openai' }"
-              @click="provider = 'openai'"
-            >OpenAI</button>
+              :class="{ active: provider === p }"
+              @click="provider = p"
+            >{{ p }}</button>
           </div>
         </div>
 

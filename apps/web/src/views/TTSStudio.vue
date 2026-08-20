@@ -13,7 +13,7 @@ import {
 } from "@nusantara/core";
 
 // ── API & Audio ──
-const { loading, error, post } = useAPI();
+const { loading, error, get, post } = useAPI();
 const {
   state: audioState,
   load,
@@ -32,7 +32,8 @@ const presetKey = ref<string>("");
 const isMultiSpeakerMode = ref(false);
 
 // ── Settings State ──
-const provider = ref<"gemini" | "openai">("gemini");
+const availableProviders = ref<{ tts: string[]; llm: string[] }>({ tts: [], llm: [] });
+const provider = ref("");
 const selectedModelId = ref("");
 const selectedVoice = ref("");
 const languageDialect = ref("");
@@ -117,8 +118,23 @@ watch(selectedModelId, () => {
   }
 });
 
+// ── Load available providers from server ──
+async function loadProviders() {
+  try {
+    const res = await get<{ tts: string[]; llm: string[] }>("/providers/active/list");
+    availableProviders.value = res;
+    if (res.tts.length > 0 && !provider.value) {
+      provider.value = res.tts[0];
+    }
+  } catch {
+    availableProviders.value = { tts: ["gemini", "openai"], llm: ["gemini", "openai"] };
+    provider.value = "gemini";
+  }
+}
+
 // ── Init defaults on mount ──
-onMounted(() => {
+onMounted(async () => {
+  await loadProviders();
   const models = filteredModels.value;
   if (models.length > 0) {
     selectedModelId.value = models[0].id;
@@ -368,7 +384,7 @@ onUnmounted(() => {
         <div class="form-group">
           <label class="form-label">Preset Dialek</label>
           <select v-model="presetKey" class="form-select">
-            <option value="">— Pilih Preset —</option>
+            <option value="">Pilih Preset</option>
             <option
               v-for="p in DIALECT_PRESETS"
               :key="p.key"
@@ -461,18 +477,13 @@ onUnmounted(() => {
           <label class="form-label">Provider</label>
           <div class="btn-group">
             <button
+              v-for="p in availableProviders.tts"
+              :key="p"
               class="btn-toggle"
-              :class="{ active: provider === 'gemini' }"
-              @click="provider = 'gemini'"
+              :class="{ active: provider === p }"
+              @click="provider = p"
             >
-              Gemini
-            </button>
-            <button
-              class="btn-toggle"
-              :class="{ active: provider === 'openai' }"
-              @click="provider = 'openai'"
-            >
-              OpenAI
+              {{ p }}
             </button>
           </div>
         </div>

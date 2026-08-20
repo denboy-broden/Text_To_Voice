@@ -1,88 +1,27 @@
 import { config } from "dotenv";
 import { resolve } from "path";
 config({ path: resolve(process.cwd(), "../../.env") });
+
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { serve } from "@hono/node-server";
 import { pluginRegistry, AudioCachePlugin } from "@nusantara/core";
-import {
-  GeminiProvider,
-  GeminiLLMProvider,
-  OpenAIProvider,
-  OpenRouterProvider,
-  OpenAICompatibleProvider,
-  OpenAICompatibleLLMProvider,
-  ProviderRegistry,
-} from "@nusantara/providers";
+import { ProviderRegistry } from "@nusantara/providers";
 import { ttsRoutes } from "./routes/tts";
 import { agentRoutes } from "./routes/agent";
 import { modelsRoutes } from "./routes/models";
 import { pluginRoutes, batchRoutes } from "./routes/plugins";
+import { createProviderConfigRoutes, registerProvidersFromConfig } from "./routes/provider-config";
 import { rateLimiter } from "./middleware/rate-limiter";
 import { errorHandler } from "./middleware/error-handler";
 
 // ── Provider Registry ────────────────────────────────────────
 const registry = new ProviderRegistry();
+export { registry as providerRegistry };
 
-// Gemini
-const geminiKey = process.env.GEMINI_API_KEY ?? "";
-if (geminiKey) {
-  registry.registerTTS("gemini", new GeminiProvider({ apiKey: geminiKey }));
-  registry.registerLLM("gemini", new GeminiLLMProvider({ apiKey: geminiKey }));
-  console.log("[providers] Gemini registered");
-}
-
-// OpenAI
-const openaiKey = process.env.OPENAI_API_KEY ?? "";
-if (openaiKey) {
-  registry.registerTTS("openai", new OpenAIProvider({ apiKey: openaiKey }));
-  console.log("[providers] OpenAI registered");
-}
-
-// OpenRouter
-const openrouterKey = process.env.OPENROUTER_API_KEY ?? "";
-if (openrouterKey) {
-  registry.registerTTS(
-    "openrouter",
-    new OpenRouterProvider({ apiKey: openrouterKey }),
-  );
-  console.log("[providers] OpenRouter registered");
-}
-
-// Custom OpenAI-Compatible Provider (any provider via .env config)
-const customKey = process.env.CUSTOM_PROVIDER_API_KEY ?? "";
-const customBaseURL = process.env.CUSTOM_PROVIDER_BASE_URL ?? "";
-if (customKey && customBaseURL) {
-  const customName = (process.env.CUSTOM_PROVIDER_NAME ?? "custom") as any;
-  const customTTSModel = process.env.CUSTOM_PROVIDER_TTS_MODEL ?? "tts-1";
-  const customLLMModel = process.env.CUSTOM_PROVIDER_LLM_MODEL ?? "gpt-4o-mini";
-  const customVoice = process.env.CUSTOM_PROVIDER_DEFAULT_VOICE ?? "alloy";
-
-  registry.registerTTS(
-    customName,
-    new OpenAICompatibleProvider({
-      name: customName,
-      apiKey: customKey,
-      baseURL: customBaseURL,
-      model: customTTSModel,
-      defaultVoice: customVoice,
-      supportsInstructions: true,
-    }),
-  );
-
-  registry.registerLLM(
-    customName,
-    new OpenAICompatibleLLMProvider({
-      name: customName,
-      apiKey: customKey,
-      baseURL: customBaseURL,
-      model: customLLMModel,
-    }),
-  );
-
-  console.log(`[providers] Custom provider "${customName}" registered (${customBaseURL})`);
-}
+// Load providers from config file
+registerProvidersFromConfig(registry);
 
 // ── Plugins ──────────────────────────────────────────────────
 const audioCache = new AudioCachePlugin({
@@ -135,6 +74,7 @@ app.route("/api/agent", agentRoutes);
 app.route("/api/models", modelsRoutes);
 app.route("/api/plugins", pluginRoutes);
 app.route("/api/batch", batchRoutes);
+app.route("/api/providers", createProviderConfigRoutes(registry));
 
 app.get("/api/health", (c) => {
   return c.json({
@@ -153,9 +93,6 @@ const port = parseInt(process.env.PORT ?? "3001", 10);
 
 serve({ fetch: app.fetch, port }, () => {
   console.log(`Server running on http://localhost:${port}`);
-  console.log(`Registered TTS providers: ${registry.getTTSProviders().join(", ")}`);
-  console.log(`Registered LLM providers: ${registry.getLLMProviders().join(", ")}`);
+  console.log(`TTS providers: ${registry.getTTSProviders().join(", ") || "(none)"}`);
+  console.log(`LLM providers: ${registry.getLLMProviders().join(", ") || "(none)"}`);
 });
-
-// Export for route files
-export { registry as providerRegistry };

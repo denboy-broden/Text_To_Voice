@@ -33,3 +33,6 @@ coverage/
 
 # Reference sources (not production code)
 sources/
+
+# Provider config (contains API keys)
+server/api/config/providers.json

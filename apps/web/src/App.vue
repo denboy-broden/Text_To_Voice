@@ -9,6 +9,7 @@ const tabs = [
   { path: "/agent", label: "Voice AI Agent", icon: "🤖", name: "voice-agent" },
   { path: "/drama", label: "Drama / Podcast", icon: "🎭", name: "drama" },
   { path: "/library", label: "Audio Library", icon: "📁", name: "library" },
+  { path: "/settings", label: "Pengaturan", icon: "⚙️", name: "settings" },
 ];
 
 function isActive(path: string): boolean {

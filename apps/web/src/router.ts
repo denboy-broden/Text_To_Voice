@@ -25,6 +25,12 @@ const routes = [
     component: () => import("./views/AudioLibrary.vue"),
     meta: { title: "Audio Library", icon: "📁" },
   },
+  {
+    path: "/settings",
+    name: "settings",
+    component: () => import("./views/Settings.vue"),
+    meta: { title: "Pengaturan Provider", icon: "⚙️" },
+  },
 ];
 
 const router = createRouter({
