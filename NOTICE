@@ -1,0 +1,27 @@
+# Third-Party Notices
+
+This project uses patterns and concepts from the following open-source projects:
+
+## @google/generative-ai (deprecated)
+- License: Apache License 2.0
+- Copyright: Google
+- Usage: Gemini API call pattern for TTS and LLM
+- Source: https://github.com/google/generative-ai-js
+
+## openai-node
+- License: Apache License 2.0
+- Copyright: OpenAI
+- Usage: Provider adapter pattern, TTS type definitions
+- Source: https://github.com/openai/openai-node
+
+## wavefile
+- License: MIT License
+- Copyright: 2009-22 Joel Strait
+- Usage: WAV chunk structure reference, PCM handling patterns
+- Source: https://github.com/psobot/ruby-wavefile
+
+## NestJS TypeScript Starter
+- License: MIT License
+- Copyright: NestJS
+- Usage: TypeScript project structure patterns
+- Source: https://github.com/nestjs/nest
