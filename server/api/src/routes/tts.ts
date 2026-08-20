@@ -7,8 +7,62 @@ import { validate } from "../middleware/validator";
 export function createTTSRoutes(registry: ProviderRegistry): Hono {
   const ttsRoutes = new Hono();
 
+  const PREVIEW_TEXT = "Selamat datang di Nusantara Voice AI. Ini adalah contoh suara untuk preview.";
+
   ttsRoutes.get("/providers", (c) => {
     return c.json({ providers: registry.getTTSProviders() });
+  });
+
+  ttsRoutes.post("/preview", async (c) => {
+    try {
+      const body = await c.req.json<{
+        voice?: string;
+        provider?: string;
+        model?: string;
+        text?: string;
+        instructions?: string;
+      }>();
+
+      const providerName = registry.autoSelectTTSProvider(body.provider as ProviderName);
+      if (!providerName) {
+        return c.json({ error: "No TTS provider available" }, 500);
+      }
+
+      const defaults: Record<string, { model: string; voice: string }> = {
+        gemini: { model: "gemini-2.5-flash-preview-tts", voice: "Kore" },
+        openai: { model: "tts-1", voice: "alloy" },
+        openrouter: { model: "openai/tts-1", voice: "alloy" },
+      };
+      const d = defaults[providerName as string] ?? { model: "tts-1", voice: "alloy" };
+
+      const request: TTSRequest = {
+        text: body.text?.trim() || PREVIEW_TEXT,
+        provider: providerName,
+        model: body.model ?? d.model,
+        voice: body.voice ?? d.voice,
+        instructions: body.instructions,
+        format: "wav",
+      };
+
+      const response = await registry.generateTTS(request);
+
+      const isPCM = response.mimeType.includes("L16") || response.mimeType.includes("pcm");
+
+      if (isPCM) {
+        const wavBlob = pcmToWav(new Int16Array(response.audio), 24000);
+        return new Response(wavBlob, {
+          headers: { "Content-Type": "audio/wav" },
+        });
+      }
+
+      return new Response(response.audio, {
+        headers: { "Content-Type": response.mimeType },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      console.error("TTS preview error:", message);
+      return c.json({ error: message }, 500);
+    }
   });
 
   ttsRoutes.post(

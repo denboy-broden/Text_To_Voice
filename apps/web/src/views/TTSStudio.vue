@@ -56,6 +56,11 @@ const generationDuration = ref(0);
 const waveformCanvas = ref<HTMLCanvasElement | null>(null);
 let waveformRaf = 0;
 
+// ── Preview State ──
+const previewing = ref(false);
+const previewAudio = ref<HTMLAudioElement | null>(null);
+const previewPlaying = ref(false);
+
 // ── Computed ──
 const charCount = computed(() => inputText.value.length);
 const maxChars = 5000;
@@ -142,6 +147,81 @@ onMounted(async () => {
   const voices = voicesForModel.value;
   if (voices.length > 0) {
     selectedVoice.value = voices[0];
+  }
+});
+
+// ── Preview Voice ──
+async function previewVoice() {
+  if (previewing.value) {
+    if (previewAudio.value) {
+      previewAudio.value.pause();
+      previewAudio.value = null;
+    }
+    previewPlaying.value = false;
+    return;
+  }
+
+  if (!provider.value) return;
+
+  previewing.value = true;
+  previewPlaying.value = true;
+
+  try {
+    const previewText = currentPreset.value?.sampleText || "Selamat datang di Nusantara Voice AI.";
+
+    const res = await fetch("/api/tts/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        voice: selectedVoice.value,
+        provider: provider.value,
+        model: selectedModelId.value,
+        text: previewText,
+        instructions: instructions.value || undefined,
+      }),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(errBody.error || `HTTP ${res.status}`);
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    if (previewAudio.value) {
+      previewAudio.value.pause();
+      URL.revokeObjectURL(previewAudio.value.src);
+    }
+
+    previewAudio.value = new Audio(url);
+    previewAudio.value.crossOrigin = "anonymous";
+    previewAudio.value.addEventListener("ended", () => {
+      previewPlaying.value = false;
+      previewing.value = false;
+    });
+    previewAudio.value.addEventListener("error", () => {
+      previewPlaying.value = false;
+      previewing.value = false;
+    });
+    await previewAudio.value.play();
+  } catch (err) {
+    previewing.value = false;
+    previewPlaying.value = false;
+    if (err instanceof Error) {
+      error.value = { detail: err.message, code: "PREVIEW_ERROR" };
+    }
+  }
+}
+
+// ── Stop preview on unmount ──
+onUnmounted(() => {
+  cancelAnimationFrame(waveformRaf);
+  if (previewAudio.value) {
+    previewAudio.value.pause();
+  }
+  if (generatedAudioUrl.value) {
+    URL.revokeObjectURL(generatedAudioUrl.value);
   }
 });
 
@@ -386,14 +466,6 @@ function removeSpeaker(idx: number) {
   if (speakers.value.length <= 1) return;
   speakers.value.splice(idx, 1);
 }
-
-// ── Stop waveform on unmount ──
-onUnmounted(() => {
-  cancelAnimationFrame(waveformRaf);
-  if (generatedAudioUrl.value) {
-    URL.revokeObjectURL(generatedAudioUrl.value);
-  }
-});
 </script>
 
 <template>
@@ -534,15 +606,28 @@ onUnmounted(() => {
         <!-- Voice -->
         <div class="form-group">
           <label class="form-label">Suara</label>
-          <select v-model="selectedVoice" class="form-select">
-            <option
-              v-for="v in voicesForModel"
-              :key="v"
-              :value="v"
+          <div class="voice-row">
+            <select v-model="selectedVoice" class="form-select voice-select">
+              <option
+                v-for="v in voicesForModel"
+                :key="v"
+                :value="v"
+              >
+                {{ v }}
+              </option>
+            </select>
+            <button
+              class="btn-preview"
+              :class="{ active: previewPlaying }"
+              :disabled="!provider.value || previewing"
+              @click="previewVoice"
+              title="Preview suara"
             >
-              {{ v }}
-            </option>
-          </select>
+              <span v-if="previewing" class="preview-spinner" />
+              <span v-else-if="previewPlaying">&#10074;&#10074;</span>
+              <span v-else>&#128052;</span>
+            </button>
+          </div>
           <div class="voice-meta" v-if="selectedVoice">
             <template v-for="vi in VOICES" :key="vi.name">
               <span v-if="vi.name === selectedVoice" class="voice-meta-tag">
@@ -785,6 +870,57 @@ onUnmounted(() => {
   width: 100%;
   padding: 8px 12px;
   font-size: 0.875rem;
+}
+
+.voice-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.voice-select {
+  flex: 1;
+}
+
+.btn-preview {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-preview:hover:not(:disabled) {
+  background: var(--accent-blue-dim);
+  color: var(--accent-blue);
+}
+
+.btn-preview.active {
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+.btn-preview:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.preview-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }
 
 .text-input {
